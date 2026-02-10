@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Hourglass Timer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #e0e0e0;
+    --sand: #fffff0;
+    --control-text: #222;
+    --control-bg: #fff;
+    --control-border: #ccc;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--control-text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    transition: background 0.6s ease;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* States */
+  body.running { --bg: #000; --control-text: #555; }
+  body.paused  { --bg: #333; --control-text: #ddd; }
+  body.finished { --bg: #e0e0e0; --control-text: #222; }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+    gap: 24px;
+  }
+
+  /* Timer display */
+  #time-display {
+    font-size: 2.4rem;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255,255,255,0.15);
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    transition: color 0.6s ease;
+  }
+  body:not(.running):not(.paused) #time-display { color: #555; text-shadow: none; }
+  body.paused #time-display { color: #ccc; }
+  body.finished #time-display { color: #555; text-shadow: none; }
+
+  /* Hourglass canvas */
+  #hourglass-container {
+    position: relative;
+    width: 180px;
+    height: 320px;
+  }
+  #hourglass {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Controls */
+  #controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  button {
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 12px 28px;
+    cursor: pointer;
+    transition: all 0.4s ease;
+    -webkit-appearance: none;
+    touch-action: manipulation;
+  }
+
+  #start-btn {
+    background: #fff;
+    color: #111;
+    font-size: 1.1rem;
+    padding: 14px 36px;
+  }
+  body.running #start-btn {
+    background: #e8e8e8;
+    color: #111;
+  }
+
+  #reset-btn {
+    background: rgba(255,255,255,0.15);
+    color: #ddd;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  body:not(.running):not(.paused) #reset-btn {
+    background: #fff;
+    color: #111;
+    border: 1px solid #ccc;
+  }
+  body.finished #reset-btn {
+    background: #fff;
+    color: #111;
+    border: 1px solid #ccc;
+  }
+
+  .faded {
+    opacity: 0.3 !important;
+    pointer-events: none !important;
+    transition: opacity 0.6s ease;
+  }
+
+  /* Preset buttons */
+  #presets {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .preset-btn {
+    background: rgba(255,255,255,0.12);
+    color: #ccc;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    min-width: 48px;
+  }
+  body:not(.running):not(.paused) .preset-btn {
+    background: #fff;
+    color: #333;
+    border: 1px solid #ccc;
+  }
+  body.finished .preset-btn {
+    background: #fff;
+    color: #333;
+    border: 1px solid #ccc;
+  }
+
+  .preset-btn.active {
+    background: rgba(255,255,255,0.3);
+    color: #fff;
+    border-color: rgba(255,255,255,0.5);
+  }
+  body:not(.running):not(.paused) .preset-btn.active {
+    background: #333;
+    color: #fff;
+    border-color: #333;
+  }
+  body.finished .preset-btn.active {
+    background: #333;
+    color: #fff;
+    border-color: #333;
+  }
+
+  @media (max-height: 600px) {
+    #hourglass-container { width: 140px; height: 250px; }
+    #time-display { font-size: 1.8rem; height: 2.4rem; }
+    button { padding: 10px 20px; font-size: 0.9rem; }
+  }
+</style>
+</head>
+<body class="finished">
+<div id="app">
+  <div id="time-display">0:00</div>
+  <div id="hourglass-container">
+    <canvas id="hourglass"></canvas>
+  </div>
+  <div id="controls">
+    <div class="btn-row">
+      <button id="start-btn">Start</button>
+      <button id="reset-btn">Reset</button>
+    </div>
+    <div id="presets">
+      <button class="preset-btn active" data-minutes="1">1m</button>
+      <button class="preset-btn" data-minutes="5">5m</button>
+      <button class="preset-btn" data-minutes="15">15m</button>
+      <button class="preset-btn" data-minutes="30">30m</button>
+      <button class="preset-btn" data-minutes="60">60m</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('hourglass');
+const ctx = canvas.getContext('2d');
+const timeDisplay = document.getElementById('time-display');
+const startBtn = document.getElementById('start-btn');
+const resetBtn = document.getElementById('reset-btn');
+const presetBtns = document.querySelectorAll('.preset-btn');
+
+const SAND_COLORS = {
+  1:  '#fffff0',   // ivory
+  5:  '#b8e6b8',   // pastel green
+  15: '#a8c8e8',   // pastel blue
+  30: '#e8a8a8',   // pastel red
+  60: '#e8cc8a',   // pastel amber
+};
+const FINISHED_COLOR = '#444';
+
+let selectedMinutes = 1;
+let totalSeconds = 60;
+let remainingSeconds = 60;
+let state = 'idle'; // idle, running, paused, finished
+let lastTick = null;
+let animFrame = null;
+let fractionalRemaining = 60;
+
+function resizeCanvas() {
+  const container = document.getElementById('hourglass-container');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = container.clientWidth * dpr;
+  canvas.height = container.clientHeight * dpr;
+  canvas.style.width = container.clientWidth + 'px';
+  canvas.style.height = container.clientHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function getSandColor() {
+  if (state === 'finished') return FINISHED_COLOR;
+  return SAND_COLORS[selectedMinutes] || '#fffff0';
+}
+
+function getGlassColor() {
+  if (state === 'running') return 'rgba(255,255,255,0.25)';
+  if (state === 'paused') return 'rgba(255,255,255,0.3)';
+  return 'rgba(80,80,80,0.35)';
+}
+
+function getFrameColor() {
+  if (state === 'running' || state === 'paused') return 'rgba(255,255,255,0.7)';
+  return 'rgba(60,60,60,0.6)';
+}
+
+function draw() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w / 2;
+  const cy = h / 2;
+  const topY = h * 0.06;
+  const botY = h * 0.94;
+  const neckY = cy;
+  const halfH = neckY - topY;
+
+  const topW = w * 0.38;
+  const neckW = w * 0.04;
+
+  const progress = totalSeconds > 0 ? 1 - (fractionalRemaining / totalSeconds) : 1;
+  const sandColor = getSandColor();
+  const glassColor = getGlassColor();
+  const frameColor = getFrameColor();
+
+  // Draw frame bars (top and bottom)
+  ctx.fillStyle = frameColor;
+  const barH = 6;
+  const barW = topW + 16;
+  roundRect(cx - barW, topY - barH, barW * 2, barH + 2, 3);
+  roundRect(cx - barW, botY - 2, barW * 2, barH + 2, 3);
+
+  // --- Sand in top bulb ---
+  const topSandFraction = 1 - progress;
+  if (topSandFraction > 0) {
+    ctx.save();
+    // Clip to upper glass shape
+    ctx.beginPath();
+    buildBulbPath(cx, topY, neckY, topW, neckW, 'top');
+    ctx.clip();
+
+    // Sand fills from bottom of top bulb upward
+    const sandTopLimit = topY + 4;
+    const sandBotLimit = neckY - 2;
+    const sandRange = sandBotLimit - sandTopLimit;
+    const sandLevel = sandBotLimit - sandRange * topSandFraction;
+
+    ctx.fillStyle = sandColor;
+    ctx.fillRect(0, sandLevel, w, sandBotLimit - sandLevel);
+    ctx.restore();
+  }
+
+  // --- Sand in bottom bulb ---
+  const botSandFraction = progress;
+  if (botSandFraction > 0) {
+    ctx.save();
+    ctx.beginPath();
+    buildBulbPath(cx, neckY, botY, neckW, topW, 'bottom');
+    ctx.clip();
+
+    const sandTopLimit = neckY + 2;
+    const sandBotLimit = botY - 4;
+    const sandRange = sandBotLimit - sandTopLimit;
+    const sandLevel = sandBotLimit - sandRange * botSandFraction;
+
+    ctx.fillStyle = sandColor;
+    ctx.fillRect(0, sandLevel, w, sandBotLimit - sandLevel);
+
+    // Sand pile (triangle on top of bottom sand)
+    if (botSandFraction < 0.98) {
+      const pileH = Math.min(20, sandRange * botSandFraction * 0.3);
+      const pileW = Math.min(topW * 0.5, 10 + botSandFraction * topW * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx, sandLevel - pileH);
+      ctx.lineTo(cx - pileW, sandLevel);
+      ctx.lineTo(cx + pileW, sandLevel);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // --- Falling sand stream ---
+  if (state === 'running' && progress < 1) {
+    ctx.strokeStyle = sandColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, neckY - 4);
+    ctx.lineTo(cx, neckY + 20);
+    ctx.stroke();
+  }
+
+  // --- Glass outline ---
+  ctx.strokeStyle = glassColor;
+  ctx.lineWidth = 2;
+
+  // Top bulb
+  ctx.beginPath();
+  buildBulbPath(cx, topY, neckY, topW, neckW, 'top');
+  ctx.stroke();
+
+  // Bottom bulb
+  ctx.beginPath();
+  buildBulbPath(cx, neckY, botY, neckW, topW, 'bottom');
+  ctx.stroke();
+}
+
+function buildBulbPath(cx, y1, y2, w1, w2, type) {
+  // Curved bulb shape using bezier curves
+  const midY = (y1 + y2) / 2;
+  if (type === 'top') {
+    ctx.moveTo(cx - w1, y1);
+    ctx.lineTo(cx - w1, y1 + 2);
+    ctx.bezierCurveTo(
+      cx - w1, midY + (y2 - y1) * 0.3,
+      cx - w2, y2 - (y2 - y1) * 0.05,
+      cx - w2, y2
+    );
+    ctx.lineTo(cx + w2, y2);
+    ctx.bezierCurveTo(
+      cx + w2, y2 - (y2 - y1) * 0.05,
+      cx + w1, midY + (y2 - y1) * 0.3,
+      cx + w1, y1 + 2
+    );
+    ctx.lineTo(cx + w1, y1);
+  } else {
+    ctx.moveTo(cx - w1, y1);
+    ctx.bezierCurveTo(
+      cx - w1, y1 + (y2 - y1) * 0.05,
+      cx - w2, midY - (y2 - y1) * 0.3,
+      cx - w2, y2 - 2
+    );
+    ctx.lineTo(cx - w2, y2);
+    ctx.lineTo(cx + w2, y2);
+    ctx.lineTo(cx + w2, y2 - 2);
+    ctx.bezierCurveTo(
+      cx + w2, midY - (y2 - y1) * 0.3,
+      cx + w1, y1 + (y2 - y1) * 0.05,
+      cx + w1, y1
+    );
+  }
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function updateDisplay() {
+  timeDisplay.textContent = formatTime(Math.ceil(fractionalRemaining));
+}
+
+function setBodyState(s) {
+  document.body.classList.remove('running', 'paused', 'finished');
+  if (s !== 'idle') document.body.classList.add(s);
+}
+
+function updateControls() {
+  // Reset faded classes
+  resetBtn.classList.remove('faded');
+  presetBtns.forEach(b => b.classList.remove('faded'));
+
+  if (state === 'running') {
+    startBtn.textContent = 'Pause';
+    resetBtn.classList.add('faded');
+    presetBtns.forEach(b => b.classList.add('faded'));
+    setBodyState('running');
+  } else if (state === 'paused') {
+    startBtn.textContent = 'Resume';
+    setBodyState('paused');
+  } else if (state === 'finished') {
+    startBtn.textContent = 'Start';
+    setBodyState('finished');
+  } else {
+    startBtn.textContent = 'Start';
+    setBodyState('idle');
+  }
+}
+
+function tick(ts) {
+  if (state !== 'running') return;
+
+  if (lastTick === null) lastTick = ts;
+  const dt = (ts - lastTick) / 1000;
+  lastTick = ts;
+
+  fractionalRemaining = Math.max(0, fractionalRemaining - dt);
+  remainingSeconds = Math.ceil(fractionalRemaining);
+
+  updateDisplay();
+  draw();
+
+  if (fractionalRemaining <= 0) {
+    state = 'finished';
+    fractionalRemaining = 0;
+    remainingSeconds = 0;
+    updateControls();
+    draw();
+    return;
+  }
+
+  animFrame = requestAnimationFrame(tick);
+}
+
+function startTimer() {
+  if (state === 'finished') {
+    resetTimer();
+  }
+  if (remainingSeconds <= 0) return;
+  state = 'running';
+  lastTick = null;
+  updateControls();
+  animFrame = requestAnimationFrame(tick);
+}
+
+function pauseTimer() {
+  state = 'paused';
+  lastTick = null;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  updateControls();
+  draw();
+}
+
+function resetTimer() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  state = 'idle';
+  lastTick = null;
+  totalSeconds = selectedMinutes * 60;
+  remainingSeconds = totalSeconds;
+  fractionalRemaining = totalSeconds;
+  updateDisplay();
+  updateControls();
+  draw();
+}
+
+function selectPreset(minutes) {
+  selectedMinutes = minutes;
+  presetBtns.forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.minutes) === minutes);
+  });
+  resetTimer();
+}
+
+// Event listeners
+startBtn.addEventListener('click', () => {
+  if (state === 'running') pauseTimer();
+  else startTimer();
+});
+
+resetBtn.addEventListener('click', resetTimer);
+
+presetBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectPreset(parseInt(btn.dataset.minutes));
+  });
+});
+
+window.addEventListener('resize', resizeCanvas);
+
+// Init
+resizeCanvas();
+resetTimer();
+</script>
+</body>
+</html>
