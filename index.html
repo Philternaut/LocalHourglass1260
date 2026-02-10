@@ -227,10 +227,11 @@ const FINISHED_COLOR = '#444';
 let selectedMinutes = 1;
 let totalSeconds = 60;
 let remainingSeconds = 60;
-let state = 'idle'; // idle, running, paused, finished
+let state = 'idle'; // idle, running, paused, finished, overtime
 let lastTick = null;
 let animFrame = null;
 let fractionalRemaining = 60;
+let overtimeElapsed = 0;
 
 function resizeCanvas() {
   const container = document.getElementById('hourglass-container');
@@ -244,7 +245,7 @@ function resizeCanvas() {
 }
 
 function getSandColor() {
-  if (state === 'finished') return FINISHED_COLOR;
+  if (state === 'finished' || state === 'overtime') return FINISHED_COLOR;
   return SAND_COLORS[selectedMinutes] || '#fffff0';
 }
 
@@ -420,7 +421,14 @@ function formatTime(sec) {
 }
 
 function updateDisplay() {
-  timeDisplay.textContent = formatTime(Math.ceil(fractionalRemaining));
+  if (state === 'overtime') {
+    const s = Math.floor(overtimeElapsed);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    timeDisplay.textContent = '+' + m + ':' + String(sec).padStart(2, '0');
+  } else {
+    timeDisplay.textContent = formatTime(Math.ceil(fractionalRemaining));
+  }
 }
 
 function setBodyState(s) {
@@ -441,7 +449,7 @@ function updateControls() {
   } else if (state === 'paused') {
     startBtn.textContent = 'Resume';
     setBodyState('paused');
-  } else if (state === 'finished') {
+  } else if (state === 'finished' || state === 'overtime') {
     startBtn.textContent = 'Start';
     setBodyState('finished');
   } else {
@@ -464,15 +472,31 @@ function tick(ts) {
   draw();
 
   if (fractionalRemaining <= 0) {
-    state = 'finished';
+    state = 'overtime';
     fractionalRemaining = 0;
     remainingSeconds = 0;
+    overtimeElapsed = 0;
+    lastTick = null;
     updateControls();
     draw();
+    animFrame = requestAnimationFrame(tickOvertime);
     return;
   }
 
   animFrame = requestAnimationFrame(tick);
+}
+
+function tickOvertime(ts) {
+  if (state !== 'overtime') return;
+
+  if (lastTick === null) lastTick = ts;
+  const dt = (ts - lastTick) / 1000;
+  lastTick = ts;
+
+  overtimeElapsed += dt;
+  updateDisplay();
+
+  animFrame = requestAnimationFrame(tickOvertime);
 }
 
 function startTimer() {
@@ -498,6 +522,7 @@ function resetTimer() {
   if (animFrame) cancelAnimationFrame(animFrame);
   state = 'idle';
   lastTick = null;
+  overtimeElapsed = 0;
   totalSeconds = selectedMinutes * 60;
   remainingSeconds = totalSeconds;
   fractionalRemaining = totalSeconds;
@@ -516,14 +541,19 @@ function selectPreset(minutes) {
 
 // Event listeners
 startBtn.addEventListener('click', () => {
+  if (state === 'overtime') { resetTimer(); return; }
   if (state === 'running') pauseTimer();
   else startTimer();
 });
 
-resetBtn.addEventListener('click', resetTimer);
+resetBtn.addEventListener('click', () => {
+  if (state === 'overtime') { resetTimer(); return; }
+  resetTimer();
+});
 
 presetBtns.forEach(btn => {
   btn.addEventListener('click', () => {
+    if (state === 'overtime') { resetTimer(); return; }
     selectPreset(parseInt(btn.dataset.minutes));
   });
 });
